@@ -460,6 +460,12 @@ input:focus-visible {
   font-weight: 500;
 }
 
+.field-note {
+  color: #99958a;
+  font-size: 10px;
+  font-weight: 400;
+}
+
 .field input,
 .phone-input {
   width: 100%;
@@ -502,6 +508,15 @@ input:focus-visible {
 
 .phone-input input:focus-visible {
   outline: 0;
+}
+
+.phone-input input:read-only {
+  color: #77756e;
+  cursor: default;
+}
+
+.verify-card .form-intro {
+  margin-bottom: 26px;
 }
 
 .location-field {

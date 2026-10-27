@@ -32,8 +32,50 @@ function LocationIcon() {
   );
 }
 
+function checkPhoneEligibility(phone) {
+  return new Promise((resolve, reject) => {
+    if (!sheetEndpoint) {
+      reject(new Error("Gift verification is not configured. Please try again later."));
+      return;
+    }
+
+    const callbackName = `baateinEligibility_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    const script = document.createElement("script");
+    const timeout = window.setTimeout(() => {
+      cleanup();
+      reject(new Error("Could not check your number. Please try again."));
+    }, 15000);
+
+    function cleanup() {
+      window.clearTimeout(timeout);
+      script.remove();
+      delete window[callbackName];
+    }
+
+    window[callbackName] = (result) => {
+      cleanup();
+      resolve(result);
+    };
+
+    script.onerror = () => {
+      cleanup();
+      reject(new Error("Could not check your number. Please try again."));
+    };
+
+    const separator = sheetEndpoint.includes("?") ? "&" : "?";
+    script.src =
+      `${sheetEndpoint}${separator}action=check` +
+      `&phone=${encodeURIComponent(phone)}` +
+      `&callback=${encodeURIComponent(callbackName)}`;
+    document.body.appendChild(script);
+  });
+}
+
 function App() {
   const [step, setStep] = useState("welcome");
+  const [eligibilityPhone, setEligibilityPhone] = useState("");
+  const [eligibilityError, setEligibilityError] = useState("");
+  const [isCheckingEligibility, setIsCheckingEligibility] = useState(false);
   const [form, setForm] = useState({
     name: "",
     phone: "",
@@ -121,9 +163,45 @@ function App() {
   function openClaimForm() {
     setIsClaiming(true);
     window.setTimeout(() => {
-      setStep("claim");
+      setStep("verify");
       setIsClaiming(false);
     }, 200);
+  }
+
+  async function verifyEligibility(event) {
+    event.preventDefault();
+    setEligibilityError("");
+    const phone = eligibilityPhone.replace(/\D/g, "");
+    if (!/^\d{10}$/.test(phone)) {
+      setEligibilityError("Enter a valid 10-digit mobile number.");
+      return;
+    }
+
+    setIsCheckingEligibility(true);
+    try {
+      const result = await checkPhoneEligibility(phone);
+      if (result?.status === "error") {
+        throw new Error("Could not check your number. Please try again.");
+      }
+      if (result?.status === "already_claimed") {
+        setEligibilityError("A gift has already been claimed with this number.");
+        return;
+      }
+      if (!result?.eligible) {
+        setEligibilityError("This number is not on the gift list.");
+        return;
+      }
+      setForm((current) => ({ ...current, phone }));
+      setStep("claim");
+    } catch (error) {
+      setEligibilityError(
+        error instanceof Error
+          ? error.message
+          : "Could not check your number. Please try again.",
+      );
+    } finally {
+      setIsCheckingEligibility(false);
+    }
   }
 
   async function submitClaim(event) {
@@ -197,7 +275,7 @@ function App() {
       {step === "claim" && (
         <section className="form-card screen-enter" aria-labelledby="claim-title">
           <div className="form-intro">
-            <button className="back-button" onClick={() => setStep("welcome")}>
+            <button className="back-button" onClick={() => setStep("verify")}>
               <span aria-hidden="true">←</span> Back
             </button>
             <p className="eyebrow"><span /> Gift delivery</p>
@@ -224,17 +302,12 @@ function App() {
                   <span aria-hidden="true">+91</span>
                   <input
                     autoComplete="tel-national"
-                    inputMode="numeric"
-                    maxLength="10"
-                    minLength="10"
                     name="phone"
-                    onChange={updateField}
-                    pattern="[0-9]{10}"
-                    placeholder="10-digit mobile number"
-                    required
+                    readOnly
                     value={form.phone}
                   />
                 </div>
+                <span className="field-note">Number verified</span>
               </label>
 
               <div className="field field-wide location-field">
@@ -341,6 +414,51 @@ function App() {
             <button className="primary-button submit-button" disabled={isSubmitting} type="submit">
               {isSubmitting ? "Sending..." : "Send my gift"}
               {!isSubmitting && <span aria-hidden="true">→</span>}
+            </button>
+          </form>
+        </section>
+      )}
+
+      {step === "verify" && (
+        <section className="form-card screen-enter verify-card" aria-labelledby="verify-title">
+          <div className="form-intro">
+            <button className="back-button" onClick={() => setStep("welcome")}>
+              <span aria-hidden="true">←</span> Back
+            </button>
+            <p className="eyebrow"><span /> Gift check</p>
+            <h1 id="verify-title">Enter your mobile number</h1>
+          </div>
+
+          <form onSubmit={verifyEligibility}>
+            <label className="field field-wide">
+              <span>Mobile number</span>
+              <div className="phone-input">
+                <span aria-hidden="true">+91</span>
+                <input
+                  autoComplete="tel-national"
+                  autoFocus
+                  inputMode="numeric"
+                  maxLength="10"
+                  minLength="10"
+                  onChange={(event) => {
+                    setEligibilityPhone(event.target.value.replace(/\D/g, "").slice(0, 10));
+                    setEligibilityError("");
+                  }}
+                  pattern="[0-9]{10}"
+                  placeholder="10-digit mobile number"
+                  required
+                  value={eligibilityPhone}
+                />
+              </div>
+            </label>
+
+            {eligibilityError && (
+              <p className="form-error" role="alert">{eligibilityError}</p>
+            )}
+
+            <button className="primary-button submit-button" disabled={isCheckingEligibility} type="submit">
+              {isCheckingEligibility ? "Checking..." : "Check number"}
+              {!isCheckingEligibility && <span aria-hidden="true">→</span>}
             </button>
           </form>
         </section>
